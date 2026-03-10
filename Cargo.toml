@@ -45,6 +45,11 @@ path = "examples/llm_candle.rs"
 required-features = ["candle"]
 
 [[example]]
+name = "count_tokens"
+path = "examples/count_tokens.rs"
+required-features = ["candle"]
+
+[[example]]
 name = "basic_mlx"
 path = "examples/basic_mlx.rs"
 required-features = ["burn-mlx"]
