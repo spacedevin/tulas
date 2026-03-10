@@ -57,13 +57,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Prompt: {}", prompt);
     println!("Generating (max {} tokens)...\n", tokens_limit);
 
+    let start = std::time::Instant::now();
     let input = Input::Text(prompt);
     let output = session.run(
         input,
         RunConfig::default().tokens_limit(tokens_limit),
         Some(|_: Output| true),
     )?;
+    let elapsed = start.elapsed();
 
     println!("{}", output.text.original);
+    eprintln!("[bench] completed in {:.2?}", elapsed);
     Ok(())
 }

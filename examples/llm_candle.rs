@@ -117,6 +117,7 @@ fn main() -> Result<()> {
     print!("{}", args.prompt);
     std::io::Write::flush(&mut std::io::stdout())?;
 
+    let start = std::time::Instant::now();
     let mut next_token = {
         let input = Tensor::new(prompt_tokens.as_slice(), &device)?.unsqueeze(0)?;
         let logits = model.forward(&input, 0)?;
@@ -151,6 +152,12 @@ fn main() -> Result<()> {
         }
     }
 
+    let elapsed = start.elapsed();
+    let generated = all_tokens.len();
     println!();
+    if generated > 0 {
+        let tok_per_sec = generated as f64 / elapsed.as_secs_f64();
+        eprintln!("[bench] generated {} tokens in {:.2?} ({:.1} tok/s)", generated, elapsed, tok_per_sec);
+    }
     Ok(())
 }

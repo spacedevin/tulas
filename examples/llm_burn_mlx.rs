@@ -32,6 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let device = MlxDevice::Gpu;
+    let start = std::time::Instant::now();
     println!("Burn-MLX on device: {:?}", device);
 
     if model_path.exists() {
@@ -44,6 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nRunning MLX tensor computation...");
     run_mlx_demo::<Mlx>(&device);
+    eprintln!("[bench] load+compute in {:.2?} (no text generation)", start.elapsed());
 
     println!("\nNote: Full LLM text generation requires burn-lm with MLX backend.");
     println!("See: https://github.com/tracel-ai/burn-lm");

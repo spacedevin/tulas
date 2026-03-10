@@ -73,6 +73,20 @@ Uses [Uzu](https://github.com/trymirai/uzu) with its native model format.
 
 **Note:** Uzu requires **Rust 1.93+** due to its dependencies. Run `rustup update` if the build fails.
 
+## Justfile
+
+[just](https://github.com/casey/just) recipes for common tasks:
+
+```bash
+just run           # One-shot: download if needed, convert if needed, run benchmarks
+just download      # Download all models (safetensors, GGUF)
+just convert-uzu   # Convert to Uzu format via lalamo
+just candle        # Run Candle example
+just uzu           # Run Uzu example
+just burn-mlx      # Run Burn-MLX example
+just benchmark     # Run all 3 and save report to benchmarks/
+```
+
 ## Requirements
 
 - **macOS** on Apple Silicon (M1/M2/M3/M4)
