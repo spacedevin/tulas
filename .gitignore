@@ -2,4 +2,5 @@ target
 .env
 models/
 lalamo/
+burn-lm/
 benchmarks/
