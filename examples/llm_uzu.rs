@@ -1,13 +1,11 @@
 //! Uzu LLM Runner
 //!
-//! Runs Llama 3.2 1B Instruct using the Uzu inference engine on Apple Silicon.
-//! Model must be converted to Uzu format first via lalamo:
-//!
-//!   uv run lalamo convert meta-llama/Llama-3.2-1B-Instruct
-//!
-//! Then point this example at the converted model directory (e.g. ./models/{VERSION}/Llama-3.2-1B-Instruct/).
+//! Runs models using the Uzu inference engine on Apple Silicon.
+//! Pass path to a model directory. Use --stream to print tokens as they arrive.
 
+use std::io::Write;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use uzu::session::{
     config::{DecodingConfig, RunConfig},
@@ -16,18 +14,20 @@ use uzu::session::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = std::env::args().collect();
+    let mut args: Vec<String> = std::env::args().collect();
+    let stream = if args.get(1).map(|s| s.as_str()) == Some("--stream") {
+        args.remove(1);
+        true
+    } else {
+        false
+    };
 
     let (model_path, prompt, tokens_limit) = match args.len() {
         1 => {
-            eprintln!("Usage: cargo run --example llm_uzu --features uzu -- <MODEL_PATH> [PROMPT] [TOKENS_LIMIT]");
+            eprintln!("Usage: cargo run --example llm_uzu --features uzu -- [--stream] <MODEL_PATH> [PROMPT] [TOKENS_LIMIT]");
             eprintln!();
             eprintln!("Example:");
-            eprintln!("  cargo run --example llm_uzu --features uzu -- ./models/v1/Llama-3.2-1B-Instruct 'Tell me about London' 128");
-            eprintln!();
-            eprintln!("To convert a model to Uzu format:");
-            eprintln!("  git clone https://github.com/trymirai/lalamo && cd lalamo");
-            eprintln!("  uv run lalamo convert meta-llama/Llama-3.2-1B-Instruct");
+            eprintln!("  cargo run --example llm_uzu --features uzu -- ./lalamo/models/Llama-3.2-1B-Instruct-8bit 'Tell me about London' 128");
             std::process::exit(1);
         }
         2 => (
@@ -59,14 +59,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let start = std::time::Instant::now();
     let input = Input::Text(prompt);
-    let output = session.run(
-        input,
-        RunConfig::default().tokens_limit(tokens_limit),
-        Some(|_: Output| true),
-    )?;
-    let elapsed = start.elapsed();
 
-    println!("{}", output.text.original);
+    let output = if stream {
+        let last_len = AtomicUsize::new(0);
+        session.run(
+            input,
+            RunConfig::default().tokens_limit(tokens_limit),
+            Some(move |output: Output| {
+                let text = &output.text.original;
+                let prev = last_len.load(Ordering::SeqCst);
+                if text.len() > prev {
+                    print!("{}", &text[prev..]);
+                    let _ = std::io::stdout().flush();
+                    last_len.store(text.len(), Ordering::SeqCst);
+                }
+                true
+            }),
+        )?
+    } else {
+        session.run(
+            input,
+            RunConfig::default().tokens_limit(tokens_limit),
+            Some(|_: Output| true),
+        )?
+    };
+
+    let elapsed = start.elapsed();
+    if !stream {
+        println!("{}", output.text.original);
+    } else {
+        println!();
+    }
     eprintln!("[bench] completed in {:.2?}", elapsed);
     Ok(())
 }

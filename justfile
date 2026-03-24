@@ -12,8 +12,9 @@ models_dir := "models"
 safetensors_dir := models_dir + "/Llama-3.2-1B-Instruct"
 gguf_dir := models_dir + "/Llama-3.2-1B-Instruct-GGUF"
 gguf_file := gguf_dir + "/Llama-3.2-1B-Instruct-Q8_0.gguf"
-lalamo_dir := "lalamo"
-uzu_model_dir := lalamo_dir + "/models"
+# Uzu expects config with model_type "language_model" (not HuggingFace model_type)
+uzu_model_dir := "lalamo/models"
+
 burn_lm_dir := "burn-lm"
 burn_lm_bin := burn_lm_dir + "/target/release/burn-lm-cli"
 benchmarks_dir := "benchmarks"
@@ -32,13 +33,8 @@ run:
     else
         echo "Models present."
     fi
-    UZU_PATH=$(ls -d {{uzu_model_dir}}/Llama-3.2-1B-Instruct* {{uzu_model_dir}}/*/Llama-3.2-1B-Instruct* 2>/dev/null | head -1)
-    if [ -z "$UZU_PATH" ]; then
-        echo "Uzu conversion missing, running convert-uzu..."
-        just convert-uzu
-    else
-        echo "Uzu model present."
-    fi
+    UZU_PATH=$(ls -d {{uzu_model_dir}}/*/ 2>/dev/null | head -1)
+    [ -n "$UZU_PATH" ] && echo "Uzu model present." || echo "Uzu: pass model path to just uzu"
     if [ ! -f {{burn_lm_bin}} ]; then
         echo "Burn-LM missing, running build-burn-lm..."
         just build-burn-lm
@@ -96,16 +92,6 @@ build-burn-lm:
     echo "Done. Run: just burn-lm"
     echo "Note: First run downloads meta-llama/Llama-3.2-1B-Instruct (gated; requires HF approval)."
 
-# Convert model to Uzu format via lalamo (ungated mlx-community 8bit)
-# Uses uvx to run published lalamo; avoids dev deps (cartesia-metal) that fail to build
-convert-uzu:
-    #!/usr/bin/env bash
-    set -e
-    mkdir -p {{lalamo_dir}}
-    echo "Converting mlx-community/Llama-3.2-1B-Instruct-8bit to Uzu format..."
-    cd {{lalamo_dir}} && uvx lalamo convert mlx-community/Llama-3.2-1B-Instruct-8bit
-    echo "Done. Uzu model in {{uzu_model_dir}}/"
-
 # Run Candle LLM example (full text generation)
 candle *ARGS:
     cargo run --example llm_candle --features candle --release -- \
@@ -114,17 +100,21 @@ candle *ARGS:
         -n {{tokens}} \
         {{ARGS}}
 
-# Run Uzu LLM example (full text generation)
+# Run Uzu LLM example
+# Usage: just uzu <MODEL_PATH> [PROMPT] [TOKENS]
 uzu *ARGS:
     #!/usr/bin/env bash
     set -e
-    MODEL_PATH=$(ls -d {{uzu_model_dir}}/Llama-3.2-1B-Instruct* {{uzu_model_dir}}/*/Llama-3.2-1B-Instruct* 2>/dev/null | head -1)
-    if [ -z "$MODEL_PATH" ]; then
-        echo "Uzu model not found. Run: just convert-uzu"
+    MODEL_PATH="${1:-}"
+    PROMPT="${2:-{{prompt}}}"
+    TOKENS="${3:-{{tokens}}}"
+    if [ -z "$MODEL_PATH" ] || [ ! -d "$MODEL_PATH" ]; then
+        echo "Usage: just uzu <MODEL_PATH> [PROMPT] [TOKENS]"
+        echo "Example: just uzu ./lalamo/models/Llama-3.2-1B-Instruct-8bit"
         exit 1
     fi
     cargo run --example llm_uzu --features uzu --release -- \
-        "$MODEL_PATH" "{{prompt}}" {{tokens}} "$@"
+        "$MODEL_PATH" "$PROMPT" "$TOKENS" "$@"
 
 # Run Burn-LM (Metal) for full LLM inference
 # burn-mlx has no LLM; burn-lm uses Burn's Metal backend
@@ -170,12 +160,12 @@ benchmark:
 
     echo "Running Uzu..."
     UZU_OUT="$TMPD/uzu.txt"
-    MODEL_PATH=$(ls -d {{uzu_model_dir}}/Llama-3.2-1B-Instruct* {{uzu_model_dir}}/*/Llama-3.2-1B-Instruct* 2>/dev/null | head -1)
-    if [ -n "$MODEL_PATH" ]; then
+    MODEL_PATH=$(ls -d {{uzu_model_dir}}/*/ 2>/dev/null | head -1)
+    if [ -n "$MODEL_PATH" ] && [ -d "$MODEL_PATH" ]; then
         cargo run --example llm_uzu --features uzu --release -- \
             "$MODEL_PATH" "{{benchmark_prompt}}" {{benchmark_tokens}} 2>&1 | tee "$UZU_OUT" || true
     else
-        echo "Uzu model not found. Run: just convert-uzu" | tee "$UZU_OUT"
+        echo "Uzu: pass model path (just uzu <path>)" | tee "$UZU_OUT"
     fi
 
     echo "Running Burn-LM (Metal)..."
@@ -229,3 +219,39 @@ benchmark:
     echo "| Burn-LM | ${B_LOAD:--} | ${B_ANSWER:--} | ${B_TOKS:--} |" >> "$REPORT"
     echo "" >> "$REPORT"
     echo "Benchmark report: $REPORT"
+
+# Uzu-only benchmark
+benchmark-uzu:
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p {{benchmarks_dir}}
+    TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+    REPORT="{{benchmarks_dir}}/uzu-report-${TIMESTAMP}.md"
+    TMPD=$(mktemp -d)
+    trap "rm -rf $TMPD" EXIT
+
+    echo "# Uzu Benchmark Report" > "$REPORT"
+    echo "Date: $(date -Iseconds)" >> "$REPORT"
+    echo "Prompt: {{benchmark_prompt}}" >> "$REPORT"
+    echo "Max tokens: {{benchmark_tokens}}" >> "$REPORT"
+    echo "" >> "$REPORT"
+
+    for MODEL_PATH in {{uzu_model_dir}}/*/; do
+        [ ! -d "$MODEL_PATH" ] && continue
+        MODEL_ID=$(basename "$MODEL_PATH")
+        echo "Running Uzu with $MODEL_ID..."
+        OUT="$TMPD/$MODEL_ID.txt"
+        cargo run --example llm_uzu --features uzu --release -- \
+            "$MODEL_PATH" "{{benchmark_prompt}}" {{benchmark_tokens}} 2>&1 | tee "$OUT" || true
+        GEN=$(awk '/Generating \(max/{n=NR+2} NR>=n' "$OUT" 2>/dev/null)
+        TIME=$(grep -oE '\[bench\] completed in [0-9.]+(ms|s)' "$OUT" 2>/dev/null || echo "")
+        echo "## $MODEL_ID" >> "$REPORT"
+        echo "" >> "$REPORT"
+        echo "Time: $TIME" >> "$REPORT"
+        echo "" >> "$REPORT"
+        echo '```' >> "$REPORT"
+        echo "$GEN" >> "$REPORT"
+        echo '```' >> "$REPORT"
+        echo "" >> "$REPORT"
+    done
+    echo "Uzu benchmark report: $REPORT"
