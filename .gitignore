@@ -1,7 +1,8 @@
 target
 .env
 models/
+benchmarks/report-*.md
+benchmarks/uzu-report-*.md
 burn-lm/
-benchmarks/
 lalamo
 .DS_Store

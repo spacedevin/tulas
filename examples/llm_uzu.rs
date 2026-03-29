@@ -4,7 +4,7 @@
 //! Pass path to a model directory. Use --stream to print tokens as they arrive.
 //!
 //! For benchmarks, set `BENCH_TOKENIZER` to a `tokenizer.json` path to emit
-//! `[bench] generated N tokens in …` (same shape as `llm_candle`).
+//! `[bench] generated N tokens in …` for benchmark scripts.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};

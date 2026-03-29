@@ -1,9 +1,8 @@
-//! Count tokens for a string using Llama 3.2 tokenizer.
-//! Used by benchmarks to compute tok/s when backends don't report token count.
-//! Uses `encode(..., false)` so counts are raw subwords (no added BOS/EOS).
+//! Count tokens with a tokenizer.json (for benchmark tok/s fallback).
+//! Uses `encode(..., false)` — raw subwords, no added BOS/EOS.
 //!
-//! Usage: cargo run --example count_tokens --features candle --release -- <path/to/tokenizer.json> <text>
-//!    or: echo "text" | cargo run --example count_tokens --features candle --release -- <path/to/tokenizer.json> -
+//! Usage: cargo run --example count_tokens --release -- <tokenizer.json> <text>
+//!    or: echo "text" | cargo run --example count_tokens --release -- <tokenizer.json> -
 
 use std::io::{self, Read};
 use std::path::Path;
@@ -25,7 +24,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let tokenizer = tokenizers::Tokenizer::from_file(tokenizer_path)
         .map_err(|e| format!("Failed to load tokenizer: {}", e))?;
-    // No special tokens: counts raw subwords for generated completion text (benchmarks).
     let encoding = tokenizer.encode(text, false).map_err(|e| format!("Encode: {}", e))?;
     println!("{}", encoding.get_ids().len());
     Ok(())

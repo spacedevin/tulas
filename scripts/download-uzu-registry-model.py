@@ -1,17 +1,5 @@
 #!/usr/bin/env python3
-"""
-Download a pre-built Uzu bundle from the Mirai registry (same source as
-trymirai/uzu tools/helpers main.py). These checkpoints are already in
-language_model format — not raw Hugging Face mlx-community layouts.
-
-Usage:
-  python3 scripts/download-uzu-registry-model.py [REPO_ID] [DEST_DIR]
-
-Env:
-  UZU_ENGINE_VERSION — must match the `uzu` crate version in Cargo.lock
-                       (default: parsed from Cargo.lock).
-"""
-from __future__ import annotations
+"""Mirai registry → local Uzu bundle. Args: [REPO_ID] [DEST_DIR]. Env: UZU_ENGINE_VERSION."""
 
 import json
 import os
@@ -79,7 +67,6 @@ def main() -> None:
             "Try UZU_ENGINE_VERSION matching Cargo.lock or pick another repoId from the registry."
         )
 
-    name = model.get("name", repo_id.split("/")[-1])
     dest = dest.resolve()
     dest.mkdir(parents=True, exist_ok=True)
 
