@@ -7,72 +7,90 @@ tokens := "64"
 benchmark_prompt := "Recite the poem 'The Road Not Taken' by Robert Frost in full."
 benchmark_tokens := "256"
 
-# Model paths
+# Model paths — ONLY mlx-community/Llama-3.2-1B-Instruct-MLXTuned is downloaded by `just download`.
+#
+#   safetensors_dir  ← full HF tree: hf download mlx-community/Llama-3.2-1B-Instruct-MLXTuned
+#   tokenizer_json   ← always inside that tree (never another model directory)
+#
+# Uzu: **pre-built bundles** from the Mirai registry ([same listing](https://trymirai.com/local-models/mlx-community-llama-3-2-1b-instruct-8bit) / [HF id](https://huggingface.co/mlx-community/Llama-3.2-1B-Instruct-8bit)), via `just download-uzu` → `models/<uzu_model_folder>/`. Not raw `hf download` (wrong config).
+# Resolver: `scripts/resolve-uzu-model-path.sh` — `UZU_MODEL_PATH`, or `UZU_MODEL_DIR` + `UZU_MODEL_BUNDLE`, else `models/<uzu_model_folder>` then optional `lalamo/_models/...`.
+#
+# Optional elsewhere: `just candle` needs a GGUF you supply yourself; `just burn-lm` uses burn-lm’s
+# own (meta-llama) download — neither is invoked by `just run` / `just benchmark`.
 models_dir := "models"
-safetensors_dir := models_dir + "/Llama-3.2-1B-Instruct"
-gguf_dir := models_dir + "/Llama-3.2-1B-Instruct-GGUF"
-gguf_file := gguf_dir + "/Llama-3.2-1B-Instruct-Q8_0.gguf"
-# Uzu expects config with model_type "language_model" (not HuggingFace model_type)
-uzu_model_dir := "lalamo/models"
+safetensors_dir := models_dir + "/Llama-3.2-1B-Instruct-MLXTuned"
+uzu_model_dir := env_var_or_default("UZU_MODEL_DIR", models_dir)
+uzu_model_folder := "Llama-3.2-1B-Instruct-8bit"
+# Mirai registry repoId (pre-exported Uzu weights on CDN), not `hf download` of the HF tree
+uzu_registry_repo_id := "mlx-community/Llama-3.2-1B-Instruct-8bit"
+uzu_model_bundle := env_var_or_default("UZU_MODEL_BUNDLE", uzu_model_folder)
+uzu_model_path := uzu_model_dir + "/" + uzu_model_bundle
 
 burn_lm_dir := "burn-lm"
 burn_lm_bin := burn_lm_dir + "/target/release/burn-lm-cli"
 benchmarks_dir := "benchmarks"
-tokenizer_json := gguf_dir + "/tokenizer.json"
+tokenizer_json := safetensors_dir + "/tokenizer.json"
 
-# One-shot: ensure models + conversion + burn-lm, then run benchmarks
+# One-shot: MLXTuned download + Uzu benchmark (no lmstudio GGUF, no burn-lm)
 run:
     #!/usr/bin/env bash
     set -e
+    cd "{{ justfile_directory() }}"
     NEED_DOWNLOAD=false
     [ ! -f {{safetensors_dir}}/model.safetensors ] && [ ! -f {{safetensors_dir}}/model-00001-of-00001.safetensors ] && NEED_DOWNLOAD=true
-    [ ! -f {{gguf_file}} ] && NEED_DOWNLOAD=true
+    [ ! -f {{tokenizer_json}} ] && NEED_DOWNLOAD=true
     if [ "$NEED_DOWNLOAD" = true ]; then
-        echo "Models missing, running download..."
+        echo "MLXTuned model missing, running download..."
         just download
     else
-        echo "Models present."
+        echo "MLXTuned model present."
     fi
-    UZU_PATH=$(ls -d {{uzu_model_dir}}/*/ 2>/dev/null | head -1)
-    [ -n "$UZU_PATH" ] && echo "Uzu model present." || echo "Uzu: pass model path to just uzu"
-    if [ ! -f {{burn_lm_bin}} ]; then
-        echo "Burn-LM missing, running build-burn-lm..."
-        just build-burn-lm
+    UZU_PATH="$(bash scripts/resolve-uzu-model-path.sh)"
+    if [ -n "$UZU_PATH" ] && [ -d "$UZU_PATH" ]; then
+        echo "Uzu model present ($UZU_PATH)."
     else
-        echo "Burn-LM present."
+        echo "Uzu: missing directory: $UZU_PATH"
+        echo "  Run: just download-uzu  (Mirai registry → models/{{uzu_model_folder}}/) or set UZU_MODEL_PATH."
+        p="$(dirname "$UZU_PATH")"
+        if [ -d "$p" ]; then echo "  Subdirs of $p:"; ls -1 "$p" 2>/dev/null | sed 's/^/    /' || true; fi
     fi
-    echo "Ensuring Burn-LM model downloaded..."
-    just download-burn-lm
     echo "Running benchmarks..."
     just benchmark
 
-# Download all models needed for LLM text generation (ungated sources)
+# Download ONLY mlx-community/Llama-3.2-1B-Instruct-MLXTuned (no lmstudio, no meta-llama)
 download:
     #!/usr/bin/env bash
     set -e
+    cd "{{ justfile_directory() }}"
     mkdir -p {{models_dir}}
-    echo "Downloading models..."
-    # Safetensors for Burn-MLX (ungated)
+    echo "Downloading mlx-community/Llama-3.2-1B-Instruct-MLXTuned only..."
+    if [ -d "{{models_dir}}/Llama-3.2-1B-Instruct" ] && [ ! -f "{{safetensors_dir}}/model.safetensors" ] && [ ! -f "{{safetensors_dir}}/model-00001-of-00001.safetensors" ]; then
+        echo "WARNING: Legacy models/Llama-3.2-1B-Instruct/ exists. If that is MLXTuned data, run:"
+        echo "  mv \"{{models_dir}}/Llama-3.2-1B-Instruct\" \"{{safetensors_dir}}\""
+    fi
     if [ ! -f {{safetensors_dir}}/model.safetensors ] && [ ! -f {{safetensors_dir}}/model-00001-of-00001.safetensors ]; then
-        echo "Downloading mlx-community/Llama-3.2-1B-Instruct-MLXTuned (safetensors)..."
         hf download mlx-community/Llama-3.2-1B-Instruct-MLXTuned --local-dir {{safetensors_dir}}
     else
-        echo "Safetensors already at {{safetensors_dir}}"
+        echo "Weights already at {{safetensors_dir}}"
     fi
-    # GGUF Q8_0 for Candle
-    if [ ! -f {{gguf_file}} ]; then
-        echo "Downloading Llama-3.2-1B-Instruct-Q8_0.gguf..."
-        mkdir -p {{gguf_dir}}
-        hf download lmstudio-community/Llama-3.2-1B-Instruct-GGUF \
-            Llama-3.2-1B-Instruct-Q8_0.gguf --local-dir {{gguf_dir}}
-        # Tokenizer for Candle (ungated)
-        if [ ! -f {{gguf_dir}}/tokenizer.json ]; then
-            hf download mlx-community/Llama-3.2-1B-Instruct-MLXTuned tokenizer.json --local-dir {{gguf_dir}}
-        fi
-    else
-        echo "GGUF already at {{gguf_file}}"
+    if [ ! -f "{{tokenizer_json}}" ]; then
+        echo "Fetching tokenizer.json into {{safetensors_dir}} (same MLXTuned repo only)..."
+        mkdir -p {{safetensors_dir}}
+        hf download mlx-community/Llama-3.2-1B-Instruct-MLXTuned tokenizer.json --local-dir {{safetensors_dir}}
     fi
-    echo "Done. Models in {{models_dir}}/"
+    echo "Done. MLXTuned tree: {{safetensors_dir}}/"
+
+# Pre-built Uzu bundle from Mirai CDN (registry API; matches trymirai/uzu tools/helpers download-model).
+download-uzu:
+    #!/usr/bin/env bash
+    set -e
+    cd "{{ justfile_directory() }}"
+    mkdir -p {{models_dir}}
+    DEST="{{models_dir}}/{{uzu_model_folder}}"
+    REPO="${UZU_REGISTRY_REPO_ID:-{{uzu_registry_repo_id}}}"
+    echo "Downloading registry model $REPO into $DEST ..."
+    python3 scripts/download-uzu-registry-model.py "$REPO" "$DEST"
+    echo "Done. Uzu path: $DEST/"
 
 # Download burn-lm Llama 3.2 1B model (meta-llama, gated; requires HF approval)
 download-burn-lm:
@@ -92,29 +110,36 @@ build-burn-lm:
     echo "Done. Run: just burn-lm"
     echo "Note: First run downloads meta-llama/Llama-3.2-1B-Instruct (gated; requires HF approval)."
 
-# Run Candle LLM example (full text generation)
+# Candle (optional): pass --model /path/to/your.gguf; tokenizer from MLXTuned tree only
 candle *ARGS:
     cargo run --example llm_candle --features candle --release -- \
-        --model {{gguf_file}} \
+        --tokenizer "{{tokenizer_json}}" \
         --prompt "{{prompt}}" \
         -n {{tokens}} \
         {{ARGS}}
 
-# Run Uzu LLM example
-# Usage: just uzu <MODEL_PATH> [PROMPT] [TOKENS]
+# Run Uzu LLM example (default path = uzu_model_path in this file)
+# Usage: just uzu [MODEL_PATH] [PROMPT] [TOKENS]  — if $1 is a directory, it is the model; else default model + $1 as prompt
 uzu *ARGS:
     #!/usr/bin/env bash
     set -e
-    MODEL_PATH="${1:-}"
-    PROMPT="${2:-{{prompt}}}"
-    TOKENS="${3:-{{tokens}}}"
-    if [ -z "$MODEL_PATH" ] || [ ! -d "$MODEL_PATH" ]; then
-        echo "Usage: just uzu <MODEL_PATH> [PROMPT] [TOKENS]"
-        echo "Example: just uzu ./lalamo/models/Llama-3.2-1B-Instruct-8bit"
+    cd "{{ justfile_directory() }}"
+    if [ -n "${1:-}" ] && [ -d "$1" ]; then
+        MODEL_PATH="$1"
+        shift
+        PROMPT="${1:-{{prompt}}}"
+        TOKENS="${2:-{{tokens}}}"
+    else
+        MODEL_PATH="$(bash scripts/resolve-uzu-model-path.sh)"
+        PROMPT="${1:-{{prompt}}}"
+        TOKENS="${2:-{{tokens}}}"
+    fi
+    if [ ! -d "$MODEL_PATH" ]; then
+        echo "No Uzu bundle at: $MODEL_PATH — run just download-uzu or set UZU_MODEL_PATH"
         exit 1
     fi
-    cargo run --example llm_uzu --features uzu --release -- \
-        "$MODEL_PATH" "$PROMPT" "$TOKENS" "$@"
+    cargo run --example llm_uzu --features uzu --release -- --stream \
+        "$MODEL_PATH" "$PROMPT" "$TOKENS"
 
 # Run Burn-LM (Metal) for full LLM inference
 # burn-mlx has no LLM; burn-lm uses Burn's Metal backend
@@ -128,15 +153,30 @@ burn-lm *ARGS:
     ./{{burn_lm_bin}} run llama32 "{{prompt}}" --sample-len {{tokens}} --no-stats "$@"
 
 # Run Burn-MLX tensor demo (no LLM; kept for burn-mlx pipeline demo)
+# MLXTuned is often sharded: prefer model.safetensors, else first shard (same as `just download` checks).
 burn-mlx *ARGS:
+    #!/usr/bin/env bash
+    set -e
+    ST="{{safetensors_dir}}"
+    MODEL=""
+    if [ -f "$ST/model.safetensors" ]; then
+        MODEL="$ST/model.safetensors"
+    elif [ -f "$ST/model-00001-of-00001.safetensors" ]; then
+        MODEL="$ST/model-00001-of-00001.safetensors"
+    else
+        echo "No safetensors in $ST (expected MLXTuned tree). Run: just download"
+        echo "If weights are still under models/Llama-3.2-1B-Instruct/, rename that folder to: $ST"
+        exit 1
+    fi
     cargo run --example llm_burn_mlx --features burn-mlx --release -- \
-        {{safetensors_dir}}/model.safetensors \
+        "$MODEL" \
         {{ARGS}}
 
-# Run all 3 LLM examples and record benchmarks
+# Uzu benchmark (tokenizer: model dir if present, else MLXTuned)
 benchmark:
     #!/usr/bin/env bash
     set -e
+    cd "{{ justfile_directory() }}"
     mkdir -p {{benchmarks_dir}}
     TIMESTAMP=$(date +%Y%m%d-%H%M%S)
     REPORT="{{benchmarks_dir}}/report-${TIMESTAMP}.md"
@@ -149,74 +189,53 @@ benchmark:
     echo "Max tokens: {{benchmark_tokens}}" >> "$REPORT"
     echo "" >> "$REPORT"
 
-    if [ ! -f {{tokenizer_json}} ]; then
-        echo "Tokenizer not found at {{tokenizer_json}}. Run 'just download' first."
+    MODEL_PATH="$(bash scripts/resolve-uzu-model-path.sh)"
+    if [ -f "$MODEL_PATH/tokenizer.json" ]; then
+        BENCH_TOK="$MODEL_PATH/tokenizer.json"
+    elif [ -f "{{tokenizer_json}}" ]; then
+        BENCH_TOK="{{tokenizer_json}}"
+    else
+        echo "No tokenizer: need $MODEL_PATH/tokenizer.json (Uzu bundle) or {{tokenizer_json}} (just download)."
         exit 1
     fi
-    echo "Running Candle..."
-    CANDLE_OUT="$TMPD/candle.txt"
-    cargo run --example llm_candle --features candle --release -- \
-        --model {{gguf_file}} --prompt "{{benchmark_prompt}}" -n {{benchmark_tokens}} 2>&1 | tee "$CANDLE_OUT" || true
 
-    echo "Running Uzu..."
+    echo "Running Uzu at $MODEL_PATH (override with UZU_MODEL_PATH / UZU_MODEL_DIR + UZU_MODEL_BUNDLE)..."
     UZU_OUT="$TMPD/uzu.txt"
-    MODEL_PATH=$(ls -d {{uzu_model_dir}}/*/ 2>/dev/null | head -1)
-    if [ -n "$MODEL_PATH" ] && [ -d "$MODEL_PATH" ]; then
-        cargo run --example llm_uzu --features uzu --release -- \
+    if [ -d "$MODEL_PATH" ]; then
+        BENCH_TOKENIZER="$BENCH_TOK" cargo run --example llm_uzu --features uzu --release -- --stream \
             "$MODEL_PATH" "{{benchmark_prompt}}" {{benchmark_tokens}} 2>&1 | tee "$UZU_OUT" || true
     else
-        echo "Uzu: pass model path (just uzu <path>)" | tee "$UZU_OUT"
+        echo "Uzu: no bundle at $MODEL_PATH — run just download-uzu (Mirai registry) or set UZU_MODEL_PATH." | tee "$UZU_OUT"
     fi
 
-    echo "Running Burn-LM (Metal)..."
-    BURN_OUT="$TMPD/burn.txt"
-    if [ -f {{burn_lm_bin}} ]; then
-        TERM=dumb ./{{burn_lm_bin}} run llama32 "{{benchmark_prompt}}" --sample-len {{benchmark_tokens}} --no-stats 2>&1 \
-            | sed $'s/\033\\[[0-9;]*[a-zA-Z]//g' | tee "$BURN_OUT" || true
-    else
-        echo "Burn-LM not built. Run: just build-burn-lm" | tee "$BURN_OUT"
-    fi
-
-    # Extract generated text and count tokens (same tokenizer for all → comparable tok/s)
-    TOKENIZER="{{tokenizer_json}}"
-    PROMPT="{{benchmark_prompt}}"
-
-    # Candle: last line of stdout is prompt+generated (strip prompt)
-    CANDLE_FULL=$(grep -v "Loading model" "$CANDLE_OUT" | grep -v "Model loaded" | grep -v "^\[bench\]" | tail -1)
-    CANDLE_GEN="${CANDLE_FULL#$PROMPT}"
-    # Uzu: generated text is after "Generating..." and a blank line
+    TOKENIZER="$BENCH_TOK"
     UZU_GEN=$(awk '/Generating \(max/{n=NR+2} NR>=n' "$UZU_OUT" 2>/dev/null)
-    # Burn-LM: "The answer is: \"...\""
-    BURN_GEN=$(grep "The answer is:" "$BURN_OUT" 2>/dev/null | sed -n 's/.*The answer is: "\(.*\)".*/\1/p')
 
     count_tok() { printf '%s' "$1" | cargo run --example count_tokens --features candle --release -- "$TOKENIZER" - 2>/dev/null || echo "0"; }
-    to_sec() { echo "$1" | awk '{if(/ms/){gsub(/ms/,""); print $0/1000}else{gsub(/s/,""); print $0+0}}'; }
+    to_sec() {
+        echo "$1" | awk '{
+            if ($0 ~ /ms$/) { sub(/ms$/,""); print ($0+0)/1000; next }
+            sub(/s$/,""); print ($0+0)
+        }'
+    }
 
-    C_TOK_N=$(count_tok "$CANDLE_GEN")
-    U_TOK_N=$(count_tok "$UZU_GEN")
-    B_TOK_N=$(count_tok "$BURN_GEN")
+    U_TOK_N=$(grep -oE '\[bench\] generated [0-9]+ tokens' "$UZU_OUT" 2>/dev/null | head -1 | grep -oE '[0-9]+' | head -1)
+    U_MS=$(grep -oE '\[bench\] generated [0-9]+ tokens in [0-9.]+(ms|s)' "$UZU_OUT" 2>/dev/null | head -1 | grep -oE '[0-9.]+(ms|s)' | head -1)
+    if [ -z "$U_MS" ]; then
+        U_MS=$(grep -oE '\[bench\] completed in [0-9.]+(ms|s)' "$UZU_OUT" 2>/dev/null | grep -oE '[0-9.]+(ms|s)' | head -1)
+        U_TOK_N=$(count_tok "$UZU_GEN")
+    fi
 
-    # Parse times and compute tok/s
-    C_TIME=$(grep -oE '\[bench\] generated [0-9]+ tokens in [0-9.]+(ms|s)' "$CANDLE_OUT" 2>/dev/null | grep -oE '[0-9.]+(ms|s)' | head -1)
-    U_MS=$(grep -oE '\[bench\] completed in [0-9.]+(ms|s)' "$UZU_OUT" 2>/dev/null | grep -oE '[0-9.]+(ms|s)')
-    B_LOAD=$(grep -oE 'model loaded! \([0-9.]+s\)' "$BURN_OUT" 2>/dev/null | grep -oE '[0-9.]+s')
-    B_ANSWER=$(grep -oE 'answer generated! \([0-9.]+s\)' "$BURN_OUT" 2>/dev/null | grep -oE '[0-9.]+s')
-
-    C_SEC=$(to_sec "$C_TIME")
     U_SEC=$(to_sec "$U_MS")
-    B_SEC=$(to_sec "$B_ANSWER")
-
-    C_TOKS=$(awk -v n="$C_TOK_N" -v s="$C_SEC" 'BEGIN {if(s>0 && n>0) printf "%.1f", n/s}' 2>/dev/null || echo "")
     U_TOKS=$(awk -v n="$U_TOK_N" -v s="$U_SEC" 'BEGIN {if(s>0 && n>0) printf "%.1f", n/s}' 2>/dev/null || echo "")
-    B_TOKS=$(awk -v n="$B_TOK_N" -v s="$B_SEC" 'BEGIN {if(s>0 && n>0) printf "%.1f", n/s}' 2>/dev/null || echo "")
 
     echo "## Summary" >> "$REPORT"
     echo "" >> "$REPORT"
+    echo "_Burn-MLX / Candle tokenizer: [mlx-community/Llama-3.2-1B-Instruct-MLXTuned](https://huggingface.co/mlx-community/Llama-3.2-1B-Instruct-MLXTuned) (\`just download\`). Uzu: pre-built [registry](https://sdk.trymirai.com) bundle (\`just download-uzu\`). Bench tokenizer: \`$TOKENIZER\`._" >> "$REPORT"
+    echo "" >> "$REPORT"
     echo "| Backend | Load | Answer | Tok/s |" >> "$REPORT"
     echo "|---------|------|--------|-------|" >> "$REPORT"
-    echo "| Candle | - | ${C_TIME:--} | ${C_TOKS:--} |" >> "$REPORT"
     echo "| Uzu | - | ${U_MS:--} | ${U_TOKS:--} |" >> "$REPORT"
-    echo "| Burn-LM | ${B_LOAD:--} | ${B_ANSWER:--} | ${B_TOKS:--} |" >> "$REPORT"
     echo "" >> "$REPORT"
     echo "Benchmark report: $REPORT"
 
@@ -224,6 +243,7 @@ benchmark:
 benchmark-uzu:
     #!/usr/bin/env bash
     set -e
+    cd "{{ justfile_directory() }}"
     mkdir -p {{benchmarks_dir}}
     TIMESTAMP=$(date +%Y%m%d-%H%M%S)
     REPORT="{{benchmarks_dir}}/uzu-report-${TIMESTAMP}.md"
@@ -236,22 +256,51 @@ benchmark-uzu:
     echo "Max tokens: {{benchmark_tokens}}" >> "$REPORT"
     echo "" >> "$REPORT"
 
-    for MODEL_PATH in {{uzu_model_dir}}/*/; do
-        [ ! -d "$MODEL_PATH" ] && continue
+    MODEL_PATH="$(bash scripts/resolve-uzu-model-path.sh)"
+    if [ -f "$MODEL_PATH/tokenizer.json" ]; then
+        BENCH_TOK="$MODEL_PATH/tokenizer.json"
+    elif [ -f "{{tokenizer_json}}" ]; then
+        BENCH_TOK="{{tokenizer_json}}"
+    else
+        echo "No tokenizer: need $MODEL_PATH/tokenizer.json or {{tokenizer_json}}."
+        exit 1
+    fi
+    to_sec_uzu() {
+        echo "$1" | awk '{
+            if ($0 ~ /ms$/) { sub(/ms$/,""); print ($0+0)/1000; next }
+            sub(/s$/,""); print ($0+0)
+        }'
+    }
+    if [ -d "$MODEL_PATH" ]; then
         MODEL_ID=$(basename "$MODEL_PATH")
         echo "Running Uzu with $MODEL_ID..."
         OUT="$TMPD/$MODEL_ID.txt"
-        cargo run --example llm_uzu --features uzu --release -- \
+        BENCH_TOKENIZER="$BENCH_TOK" cargo run --example llm_uzu --features uzu --release -- --stream \
             "$MODEL_PATH" "{{benchmark_prompt}}" {{benchmark_tokens}} 2>&1 | tee "$OUT" || true
         GEN=$(awk '/Generating \(max/{n=NR+2} NR>=n' "$OUT" 2>/dev/null)
-        TIME=$(grep -oE '\[bench\] completed in [0-9.]+(ms|s)' "$OUT" 2>/dev/null || echo "")
+        U_TOK_N=$(grep -oE '\[bench\] generated [0-9]+ tokens' "$OUT" 2>/dev/null | head -1 | grep -oE '[0-9]+' | head -1)
+        U_TIME=$(grep -oE '\[bench\] generated [0-9]+ tokens in [0-9.]+(ms|s)' "$OUT" 2>/dev/null | head -1 | grep -oE '[0-9.]+(ms|s)' | head -1)
+        if [ -z "$U_TIME" ]; then
+            U_TIME=$(grep -oE '\[bench\] completed in [0-9.]+(ms|s)' "$OUT" 2>/dev/null | grep -oE '[0-9.]+(ms|s)' | head -1)
+        fi
+        if [ -z "$U_TOK_N" ]; then
+            U_TOK_N=$(printf '%s' "$GEN" | cargo run --example count_tokens --features candle --release -- "$BENCH_TOK" - 2>/dev/null || echo "0")
+        fi
+        U_SEC=$(to_sec_uzu "$U_TIME")
+        U_TOKS=$(awk -v n="$U_TOK_N" -v s="$U_SEC" 'BEGIN {if(s>0 && n>0) printf "%.1f", n/s}' 2>/dev/null || echo "")
         echo "## $MODEL_ID" >> "$REPORT"
         echo "" >> "$REPORT"
-        echo "Time: $TIME" >> "$REPORT"
+        echo "| Gen time | Tokens | Tok/s |" >> "$REPORT"
+        echo "|----------|--------|-------|" >> "$REPORT"
+        echo "| ${U_TIME:--} | ${U_TOK_N:--} | ${U_TOKS:--} |" >> "$REPORT"
         echo "" >> "$REPORT"
         echo '```' >> "$REPORT"
         echo "$GEN" >> "$REPORT"
         echo '```' >> "$REPORT"
         echo "" >> "$REPORT"
-    done
+    else
+        echo "## (no model)" >> "$REPORT"
+        echo "" >> "$REPORT"
+        echo "No Uzu bundle at $MODEL_PATH — run just download-uzu or set UZU_MODEL_PATH." >> "$REPORT"
+    fi
     echo "Uzu benchmark report: $REPORT"

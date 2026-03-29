@@ -1,8 +1,8 @@
-//! Candle LLM Runner (GGUF Q8_0)
+//! Candle LLM Runner (GGUF weights — bring your own file)
 //!
-//! Loads Llama-3.2-1B-Instruct-Q8_0.gguf and runs text generation on Apple Silicon (Metal).
-//! Model: https://huggingface.co/lmstudio-community/Llama-3.2-1B-Instruct-GGUF
-//! File: Llama-3.2-1B-Instruct-Q8_0.gguf (~1.32 GB)
+//! This repo’s **`just download` only fetches** [`mlx-community/Llama-3.2-1B-Instruct-MLXTuned`](https://huggingface.co/mlx-community/Llama-3.2-1B-Instruct-MLXTuned) (safetensors + tokenizer).
+//! Candle needs a **separate GGUF** on disk; use `--tokenizer` pointing at
+//! `models/Llama-3.2-1B-Instruct-MLXTuned/tokenizer.json` from that tree so the tokenizer matches MLXTuned.
 
 use std::path::PathBuf;
 
@@ -20,9 +20,13 @@ const DEFAULT_PROMPT: &str = "My favorite theorem is ";
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 struct Args {
-    /// Path to GGUF file (e.g. Llama-3.2-1B-Instruct-Q8_0.gguf)
+    /// Path to GGUF weights (not downloaded by `just download`; obtain separately if you use Candle)
     #[arg(long)]
     model: PathBuf,
+
+    /// `tokenizer.json` from MLXTuned tree (`just download` → models/...-MLXTuned/tokenizer.json)
+    #[arg(long)]
+    tokenizer: Option<PathBuf>,
 
     /// Prompt to generate from
     #[arg(long, default_value = DEFAULT_PROMPT)]
@@ -50,7 +54,7 @@ fn main() -> Result<()> {
 
     if !args.model.exists() {
         anyhow::bail!(
-            "Model file not found: {}\nDownload from: https://huggingface.co/lmstudio-community/Llama-3.2-1B-Instruct-GGUF (file: Llama-3.2-1B-Instruct-Q8_0.gguf)",
+            "GGUF not found: {}\nThis repo only auto-downloads mlx-community/Llama-3.2-1B-Instruct-MLXTuned (safetensors). Candle expects a GGUF path you supply plus --tokenizer from that MLXTuned tree.",
             args.model.display()
         );
     }
@@ -72,21 +76,19 @@ fn main() -> Result<()> {
     let mut model = ModelWeights::from_gguf(model_content, &mut file, &device)?;
     println!("Model loaded.");
 
-    // Load tokenizer from same directory or meta-llama/Llama-3.2-1B-Instruct
+    // Tokenizer: only MLXTuned file or explicit --tokenizer (no other Hub repos).
     let tokenizer_path = args
-        .model
-        .parent()
-        .and_then(|p| {
-            let t = p.join("tokenizer.json");
-            if t.exists() {
-                Some(t)
-            } else {
-                None
-            }
+        .tokenizer
+        .filter(|p| p.exists())
+        .or_else(|| {
+            args.model.parent().and_then(|p| {
+                let t = p.join("tokenizer.json");
+                t.exists().then_some(t)
+            })
         })
         .or_else(|| {
             let api = hf_hub::api::sync::Api::new().ok()?;
-            api.model("meta-llama/Llama-3.2-1B-Instruct".to_string())
+            api.model("mlx-community/Llama-3.2-1B-Instruct-MLXTuned".to_string())
                 .get("tokenizer.json")
                 .ok()
         });
@@ -94,7 +96,7 @@ fn main() -> Result<()> {
     let tokenizer = match tokenizer_path {
         Some(p) => Tokenizer::from_file(p).map_err(|e| anyhow::anyhow!("Tokenizer: {}", e))?,
         None => anyhow::bail!(
-            "tokenizer.json not found. Place it next to the model or ensure meta-llama/Llama-3.2-1B-Instruct is accessible."
+            "tokenizer.json not found. Pass --tokenizer /path/to/models/Llama-3.2-1B-Instruct-MLXTuned/tokenizer.json (from `just download`) or place tokenizer.json next to the GGUF."
         ),
     };
 

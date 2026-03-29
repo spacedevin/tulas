@@ -1,96 +1,88 @@
 # tish-mlx-burn
 
-Local LLM inference on Apple Silicon using **Burn** (burn-lm Metal), **Uzu**, and **Candle**. Uzu focuses on MLX models with **no conversion** – models are already MLX on HuggingFace.
+Local LLM inference on Apple Silicon using **Uzu** (MLX), **Burn-MLX** (tensor demo), and optional **Candle** (GGUF you supply) / **burn-lm** (separate gated download).
 
-## Model and format equivalents
+## Model policy
 
-| Runtime | Format     | Source | Notes |
-|---------|------------|--------|-------|
-| **Candle** | GGUF Q8_0 | [lmstudio-community/Llama-3.2-1B-Instruct-GGUF](https://huggingface.co/lmstudio-community/Llama-3.2-1B-Instruct-GGUF) | Ungated |
-| **Burn** | Burn pretrained | [burn-lm](https://github.com/tracel-ai/burn-lm) downloads meta-llama/Llama-3.2-1B-Instruct | **Gated** – requires HF approval |
-| **Uzu** | MLX | [mlx-community](https://huggingface.co/mlx-community) | Pass model path |
+**`just download` only fetches** [`mlx-community/Llama-3.2-1B-Instruct-MLXTuned`](https://huggingface.co/mlx-community/Llama-3.2-1B-Instruct-MLXTuned) into `models/Llama-3.2-1B-Instruct-MLXTuned/` (safetensors + tokenizer). Nothing from lmstudio or meta-llama is pulled by that recipe.
 
-**Note:** burn-mlx has no LLM inference support. Burn uses [burn-lm](https://github.com/tracel-ai/burn-lm) with Metal backend for full text generation.
+| Piece | Source |
+|-------|--------|
+| **Default weights + tokenizer** | `mlx-community/Llama-3.2-1B-Instruct-MLXTuned` via `just download` |
+| **Uzu** | **Pre-built** bundles from the [Mirai registry](https://github.com/trymirai/uzu#models) (same IDs as [HF](https://huggingface.co/mlx-community/Llama-3.2-1B-Instruct-8bit) / [Mirai library](https://trymirai.com/local-models/mlx-community-llama-3-2-1b-instruct-8bit), but served as Uzu-ready files on Mirai’s CDN). Run **`just download-uzu`** → `models/Llama-3.2-1B-Instruct-8bit/`. Do **not** use plain `hf download` into that folder (old HF `llama` config breaks Uzu — delete the folder and re-run **`just download-uzu`**). Override repo with **`UZU_REGISTRY_REPO_ID`** / path with **`UZU_MODEL_PATH`**. Engine version follows **`uzu` in `Cargo.lock`** (`UZU_ENGINE_VERSION` to override). |
+| **Burn-MLX demo** | Same MLXTuned safetensors path as above |
+| **Candle** (optional) | You provide a GGUF path; pass `--tokenizer` pointing at `models/...-MLXTuned/tokenizer.json` |
+| **burn-lm** (optional) | `just download-burn-lm` — uses burn-lm’s **meta-llama** weights; not part of `just run` |
 
 ## Examples
 
 ### basic_mlx (no model)
 
-Minimal Burn-MLX tensor demo:
-
 ```bash
 cargo run --example basic_mlx --features burn-mlx
 ```
 
-### Candle (GGUF Q8_0)
-
-Uses [Candle](https://github.com/huggingface/candle) with Metal on Apple Silicon.
-
-```bash
-# Download model (Q8_0, ~1.32 GB)
-# From https://huggingface.co/lmstudio-community/Llama-3.2-1B-Instruct-GGUF
-
-cargo run --example llm_candle --features candle --release -- \
-  --model ./Llama-3.2-1B-Instruct-Q8_0.gguf \
-  --prompt "Tell me about London" \
-  -n 64
-```
-
-The tokenizer is downloaded from `mlx-community/Llama-3.2-1B-Instruct-MLXTuned` and placed next to the GGUF file by `just download`.
-
-### Burn (Metal) – full LLM inference
-
-Uses [burn-lm](https://github.com/tracel-ai/burn-lm) with Burn's Metal backend (Apple Silicon GPU).
-
-```bash
-just build-burn-lm     # Build (one-time)
-just download-burn-lm  # Download model (gated; requires HF approval + login)
-just burn-lm           # Run Llama 3.2 1B inference
-```
-
-`download-burn-lm` fetches `meta-llama/Llama-3.2-1B-Instruct` (**gated**; requires [Hugging Face approval](https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct) and `huggingface-cli login`).
-
-### Burn-MLX (tensor demo only)
-
-Optional: loads safetensors and runs tensor ops (no LLM generation). burn-mlx has no LLM support.
-
-```bash
-cargo run --example llm_burn_mlx --features burn-mlx --release -- \
-  ./models/Llama-3.2-1B-Instruct/model.safetensors
-```
-
 ### Uzu
 
-Uses [Uzu](https://github.com/trymirai/uzu). Pass a model directory:
-
 ```bash
-just uzu ./lalamo/models/Llama-3.2-1B-Instruct-8bit "Tell me about London" 128
+just download     # MLXTuned (Burn-MLX / Candle tokenizer baseline)
+just download-uzu # Mirai registry → models/Llama-3.2-1B-Instruct-8bit/ (pre-exported for Uzu)
+just uzu "Tell me about London" 128
+# Or pass the bundle path explicitly:
+just uzu ./models/Llama-3.2-1B-Instruct-8bit "Tell me about London" 128
 ```
 
 Or with cargo:
 
 ```bash
 cargo run --example llm_uzu --features uzu --release -- \
-  ./lalamo/models/Llama-3.2-1B-Instruct-8bit "Tell me about London" 128
+  ./models/Llama-3.2-1B-Instruct-8bit "Tell me about London" 128
 ```
 
 **Note:** Uzu requires **Rust 1.93+**. Run `rustup update` if the build fails.
 
-## Justfile
-
-[just](https://github.com/casey/just) recipes for common tasks:
+### Burn-MLX (tensor demo only)
 
 ```bash
-just run                  # One-shot: download, build burn-lm, run benchmarks
-just download             # Download models (safetensors, GGUF)
-just build-burn-lm        # Build burn-lm with Metal
-just download-burn-lm     # Download burn-lm model (gated)
-just candle               # Run Candle example
-just uzu [path] [prompt] [tokens]  # Run Uzu
-just burn-lm              # Run Burn-LM (Metal) for full LLM inference
-just burn-mlx             # Run Burn-MLX tensor demo (no LLM)
-just benchmark            # Run all 3 LLM backends and save report
-just benchmark-uzu        # Uzu benchmark
+just download
+just burn-mlx
+```
+
+### Candle (optional GGUF)
+
+Candle is not wired to MLXTuned safetensors. If you have a GGUF file, run with the MLXTuned tokenizer from `just download`:
+
+```bash
+just download
+just candle -- --model /path/to/your.gguf
+```
+
+(`just candle` passes `--tokenizer` to `models/Llama-3.2-1B-Instruct-MLXTuned/tokenizer.json` automatically.)
+
+### Burn (Metal) – full LLM via burn-lm
+
+Uses [burn-lm](https://github.com/tracel-ai/burn-lm) with Burn’s Metal backend. **Not** the MLXTuned Hub repo; separate gated download:
+
+```bash
+just build-burn-lm
+just download-burn-lm   # meta-llama/Llama-3.2-1B-Instruct — requires HF approval + login
+just burn-lm
+```
+
+## Justfile
+
+```bash
+just run                  # MLXTuned download + Uzu benchmark only
+just download             # ONLY mlx-community/...-MLXTuned
+just burn-mlx             # Tensor demo using MLXTuned safetensors
+just benchmark            # Uzu at uzu_model_path (see justfile)
+just benchmark-uzu        # same single model as `just benchmark`
+# Overrides: UZU_MODEL_PATH=/abs/path  or  UZU_MODEL_DIR=… UZU_MODEL_BUNDLE=folder
+just candle -- --model /path/to/model.gguf   # optional; MLXTuned tokenizer from download
+just build-burn-lm        # optional burn-lm
+just download-burn-lm     # optional; gated meta-llama weights
+just burn-lm              # optional
+just uzu [path] [prompt] [tokens]
 ```
 
 ## Requirements

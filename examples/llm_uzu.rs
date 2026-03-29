@@ -2,16 +2,38 @@
 //!
 //! Runs models using the Uzu inference engine on Apple Silicon.
 //! Pass path to a model directory. Use --stream to print tokens as they arrive.
+//!
+//! For benchmarks, set `BENCH_TOKENIZER` to a `tokenizer.json` path to emit
+//! `[bench] generated N tokens in …` (same shape as `llm_candle`).
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use tokenizers::Tokenizer;
 use uzu::session::{
     config::{DecodingConfig, RunConfig},
     types::{Input, Output},
     Session,
 };
+
+fn count_completion_tokens(
+    tokenizer_path: &Path,
+    prompt: &str,
+    full_text: &str,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let tokenizer = Tokenizer::from_file(tokenizer_path)
+        .map_err(|e| format!("Tokenizer: {}", e))?;
+    let completion = if full_text.starts_with(prompt) {
+        &full_text[prompt.len()..]
+    } else {
+        full_text
+    };
+    let encoding = tokenizer
+        .encode(completion, false)
+        .map_err(|e| format!("Encode: {}", e))?;
+    Ok(encoding.get_ids().len())
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args: Vec<String> = std::env::args().collect();
@@ -27,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("Usage: cargo run --example llm_uzu --features uzu -- [--stream] <MODEL_PATH> [PROMPT] [TOKENS_LIMIT]");
             eprintln!();
             eprintln!("Example:");
-            eprintln!("  cargo run --example llm_uzu --features uzu -- ./lalamo/models/Llama-3.2-1B-Instruct-8bit 'Tell me about London' 128");
+            eprintln!("  cargo run --example llm_uzu --features uzu -- ./models/Llama-3.2-1B-Instruct-8bit 'Tell me about London' 128");
             std::process::exit(1);
         }
         2 => (
@@ -35,11 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Tell me about London.".to_string(),
             128,
         ),
-        3 => (
-            PathBuf::from(&args[1]),
-            args[2].clone(),
-            128,
-        ),
+        3 => (PathBuf::from(&args[1]), args[2].clone(), 128),
         _ => (
             PathBuf::from(&args[1]),
             args[2].clone(),
@@ -57,6 +75,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Prompt: {}", prompt);
     println!("Generating (max {} tokens)...\n", tokens_limit);
 
+    let prompt_str = prompt.clone();
     let start = std::time::Instant::now();
     let input = Input::Text(prompt);
 
@@ -90,6 +109,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         println!();
     }
-    eprintln!("[bench] completed in {:.2?}", elapsed);
+
+    match std::env::var("BENCH_TOKENIZER") {
+        Ok(path) if !path.is_empty() => {
+            match count_completion_tokens(Path::new(&path), &prompt_str, &output.text.original) {
+                Ok(n) => {
+                    let tok_per_sec = n as f64 / elapsed.as_secs_f64().max(f64::EPSILON);
+                    eprintln!(
+                        "[bench] generated {} tokens in {:.2?} ({:.1} tok/s)",
+                        n, elapsed, tok_per_sec
+                    );
+                }
+                Err(e) => {
+                    eprintln!("BENCH_TOKENIZER: {e}");
+                    eprintln!("[bench] completed in {:.2?}", elapsed);
+                }
+            }
+        }
+        _ => eprintln!("[bench] completed in {:.2?}", elapsed),
+    }
     Ok(())
 }

@@ -2,7 +2,7 @@
 name = "tish-mlx-burn"
 version = "0.1.0"
 edition = "2021"
-description = "Local LLM inference on Apple Silicon using Burn-MLX, Uzu, and Candle"
+description = "Apple Silicon LLM demos; MLXTuned via just download, Uzu bundles via Mirai registry (just download-uzu)"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
@@ -26,7 +26,7 @@ anyhow = { version = "1", optional = true }
 [features]
 default = []
 burn-mlx = ["dep:burn", "dep:burn-mlx", "dep:safetensors"]
-uzu = ["dep:uzu"]
+uzu = ["dep:uzu", "dep:tokenizers"]
 candle = ["dep:candle-core", "dep:candle-nn", "dep:candle-transformers", "dep:tokenizers", "dep:hf-hub", "dep:clap", "dep:anyhow"]
 
 [[example]]

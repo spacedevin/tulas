@@ -1,12 +1,13 @@
 //! Burn-MLX LLM Runner (safetensors loading + MLX backend)
 //!
 //! Demonstrates loading safetensors metadata and running on Apple Silicon via burn-mlx.
-//! Model: meta-llama/Llama-3.2-1B-Instruct (safetensors from Hugging Face).
+//! Model: `mlx-community/Llama-3.2-1B-Instruct-MLXTuned` (ungated safetensors; same as `just download`).
 //!
 //! Full LLM text generation requires burn-lm with MLX backend (burn-lm-llama uses Burn 0.18;
 //! burn-mlx targets Burn 0.16). This example shows the MLX backend and safetensors pipeline.
 //!
-//! Download: huggingface-cli download meta-llama/Llama-3.2-1B-Instruct --local-dir ./models/Llama-3.2-1B-Instruct
+//! Download: `just download` (recommended) or
+//! `hf download mlx-community/Llama-3.2-1B-Instruct-MLXTuned --local-dir ./models/Llama-3.2-1B-Instruct-MLXTuned`
 
 use std::path::PathBuf;
 
@@ -23,10 +24,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("Usage: cargo run --example llm_burn_mlx --features burn-mlx -- <PATH_TO_MODEL_SAFETENSORS>");
             eprintln!();
             eprintln!("Example:");
-            eprintln!("  cargo run --example llm_burn_mlx --features burn-mlx -- ./models/Llama-3.2-1B-Instruct/model.safetensors");
+            eprintln!("  cargo run --example llm_burn_mlx --features burn-mlx -- ./models/Llama-3.2-1B-Instruct-MLXTuned/model.safetensors");
             eprintln!();
             eprintln!("Download model:");
-            eprintln!("  huggingface-cli download meta-llama/Llama-3.2-1B-Instruct --local-dir ./models/Llama-3.2-1B-Instruct");
+            eprintln!("  just download");
+            eprintln!("  # or: hf download mlx-community/Llama-3.2-1B-Instruct-MLXTuned --local-dir ./models/Llama-3.2-1B-Instruct-MLXTuned");
             std::process::exit(1);
         }
     };
