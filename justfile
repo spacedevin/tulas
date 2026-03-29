@@ -1,35 +1,35 @@
-# Uzu + Mirai registry bundles. `just` → list recipes.
+# `just` alone = same as `just run` (default model + prompt + token cap from variables below).
+# Tish samples: `just tish-llm` / `just tish-count-tokens` (optional; needs `../tish`).
 
 default:
-    @just --list
+    @just run
 
+# Default bundle directory (must match defaultModelRelPath in scripts/download-uzu-registry-model.tish).
 models_dir := "models"
 model_folder := "Llama-3.2-1B-Instruct-8bit"
-registry_repo := "mlx-community/Llama-3.2-1B-Instruct-8bit"
 benchmarks_dir := "benchmarks"
+tish_manifest := "../tish/Cargo.toml"
 
 prompt := "Tell me about London in three sentences."
 tokens := "64"
 benchmark_prompt := "Recite the poem 'The Road Not Taken' by Robert Frost in full."
 benchmark_tokens := "256"
 
-download-uzu:
+# Fetch bundle: defaults live in scripts/download-uzu-registry-model.tish (optional: UZU_REGISTRY_REPO_ID, UZU_MODEL_DEST, UZU_ENGINE_VERSION).
+download:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
-    mkdir -p "{{models_dir}}"
-    DEST="{{models_dir}}/{{model_folder}}"
-    REPO="${UZU_REGISTRY_REPO_ID:-{{registry_repo}}}"
-    TISH_BIN="${TISH:-tish}"
-    export UZU_REGISTRY_REPO_ID="$REPO"
-    export UZU_MODEL_DEST="$PWD/$DEST"
-    "$TISH_BIN" run scripts/download-uzu-registry-model.tish --backend vm
-    echo "Model directory: $DEST"
+    "${TISH:-tish}" run scripts/download-uzu-registry-model.tish --backend vm
+
+download-uzu:
+    @just download
 
 build:
     cargo build --release
 
-uzu *ARGS:
+# Stream tokens to stdout (default model: models/<model_folder>/).
+run *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
@@ -45,8 +45,44 @@ uzu *ARGS:
         fi
         P="${1:-{{prompt}}}"; T="${2:-{{tokens}}}"
     fi
-    [[ -d "$MODEL" ]] || { echo "No bundle at $MODEL — run just download-uzu"; exit 1; }
+    [[ -d "$MODEL" ]] || { echo "No bundle at $MODEL — run: just download"; exit 1; }
     cargo run --example llm_uzu --release -- --stream "$MODEL" "$P" "$T"
+
+uzu *ARGS:
+    @just run {{ARGS}}
+
+# Same defaults as `just run`: default model dir, {{prompt}}, {{tokens}}; extra args replace/extend.
+tish-llm *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    mkdir -p examples/llm-uzu-tish/dist
+    cargo run --manifest-path "{{tish_manifest}}" -q -p tishlang -- compile --target native --native-backend rust --feature process examples/llm-uzu-tish/src/main.tish -o examples/llm-uzu-tish/dist/llm-uzu-tish
+    BIN=./examples/llm-uzu-tish/dist/llm-uzu-tish
+    if [ "$#" -eq 0 ]; then
+      MODEL="${UZU_MODEL_PATH:-$PWD/{{models_dir}}/{{model_folder}}}"
+      [[ "$MODEL" == /* ]] || MODEL="$PWD/$MODEL"
+      [[ -d "$MODEL" ]] || { echo "No bundle at $MODEL — run: just download"; exit 1; }
+      exec "$BIN" --stream "$MODEL" "{{prompt}}" "{{tokens}}"
+    fi
+    exec "$BIN" "$@"
+
+# With no args: default tokenizer under the default model dir + short sample text.
+tish-count-tokens *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    mkdir -p examples/count-tokens-tish/dist
+    cargo run --manifest-path "{{tish_manifest}}" -q -p tishlang -- compile --target native --native-backend rust --feature process examples/count-tokens-tish/src/main.tish -o examples/count-tokens-tish/dist/count-tokens-tish
+    BIN=./examples/count-tokens-tish/dist/count-tokens-tish
+    if [ "$#" -eq 0 ]; then
+      MODEL="${UZU_MODEL_PATH:-$PWD/{{models_dir}}/{{model_folder}}}"
+      [[ "$MODEL" == /* ]] || MODEL="$PWD/$MODEL"
+      TOK="$MODEL/tokenizer.json"
+      [[ -f "$TOK" ]] || { echo "Missing $TOK — run: just download"; exit 1; }
+      exec "$BIN" "$TOK" "{{prompt}}"
+    fi
+    exec "$BIN" "$@"
 
 benchmark:
     #!/usr/bin/env bash
@@ -64,7 +100,7 @@ benchmark:
         MODEL="$PWD/{{models_dir}}/{{model_folder}}"
     fi
     TOK="$MODEL/tokenizer.json"
-    [[ -f "$TOK" ]] || { echo "Missing $TOK — run just download-uzu"; exit 1; }
+    [[ -f "$TOK" ]] || { echo "Missing $TOK — run: just download"; exit 1; }
 
     echo "# Uzu benchmark" >"$REPORT"
     echo "Date: $(date -Iseconds)" >>"$REPORT"

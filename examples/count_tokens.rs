@@ -7,6 +7,8 @@
 use std::io::{self, Read};
 use std::path::Path;
 
+use tish_mlx_burn::count_tokens;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
@@ -22,9 +24,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         args[2].clone()
     };
-    let tokenizer = tokenizers::Tokenizer::from_file(tokenizer_path)
-        .map_err(|e| format!("Failed to load tokenizer: {}", e))?;
-    let encoding = tokenizer.encode(text, false).map_err(|e| format!("Encode: {}", e))?;
-    println!("{}", encoding.get_ids().len());
+    let n = count_tokens(tokenizer_path, &text).map_err(|e| -> Box<dyn std::error::Error> {
+        e.into()
+    })?;
+    println!("{n}");
     Ok(())
 }

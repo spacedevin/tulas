@@ -1142,9 +1142,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi 5.3.0",
  "wasip2",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -3078,8 +3080,17 @@ dependencies = [
 name = "tish-mlx-burn"
 version = "0.1.0"
 dependencies = [
+ "tishlang_core",
  "tokenizers",
  "uzu",
+]
+
+[[package]]
+name = "tishlang_core"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "getrandom 0.3.4",
 ]
 
 [[package]]

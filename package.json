@@ -1,0 +1,8 @@
+{
+  "name": "tish-mlx-burn",
+  "private": true,
+  "tish": {
+    "module": true,
+    "export": "mlx_burn_object"
+  }
+}

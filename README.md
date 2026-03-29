@@ -1,56 +1,49 @@
-# tish-mlx-burn
+# TULAS — Uzu on Apple Silicon
 
-**Uzu** on Apple Silicon: run and benchmark [Mirai](https://github.com/trymirai/uzu)’s Rust inference engine with **pre-built registry bundles** (no local conversion).
+**Run a model**
 
-## Requirements
+```bash
+just download    # once: fetch bundle (needs `tish` + fs,process; see below)
+just             # same as `just run`: default model, prompt, and token cap from the justfile
+just run "Your prompt" 128
+just run ./models/Llama-3.2-1B-Instruct-8bit "Hello" 64
+```
 
-- Rust **1.93+** (see `rustup update`)
-- **Tish** CLI with **`fs`** and **`process`** (registry + weights are fetched with `curl`). Example build from a Tish workspace checkout:
+Override model dir with `UZU_MODEL_PATH`, or pass the bundle directory as the first argument to `just run`.
+
+**Requirements**
+
+- Rust **1.93+**
+- **`tish`** with **`fs`** and **`process`** for download only:
 
   ```bash
   cargo build -p tishlang --release --features fs,process
-  export PATH="/path/to/tish/target/release:$PATH"   # or set TISH to the full path to `tish`
+  export PATH="/path/to/tish/target/release:$PATH"   # or TISH=/path/to/tishlang
   ```
 
-- **`curl`** on `PATH` (used by the download script)
+- **`curl`** (used by the download script)
 
-## Model
+Weights must be Mirai/Uzu registry bundles (not arbitrary MLX trees). Default **repo id** and **install folder** are set in [`scripts/download-uzu-registry-model.tish`](scripts/download-uzu-registry-model.tish) (`defaultRegistryRepoId`, `defaultModelRelPath`). The `justfile` **`model_folder`** must stay aligned with that path so `just run` finds the bundle. Override download with **`UZU_REGISTRY_REPO_ID`** / **`UZU_MODEL_DEST`** / **`UZU_ENGINE_VERSION`** in the environment.
 
-Weights are **not** plain `huggingface-cli download` MLX trees (wrong `config.json` for Uzu). Use the Mirai CDN via this repo:
+**Other `just` recipes**
 
-```bash
-just download-uzu
-```
-
-Defaults live in the `justfile` (`registry_repo`, `model_folder`). Override download with **`UZU_REGISTRY_REPO_ID`**. The script reads **`uzu`’s version from `Cargo.lock`** for the API (set **`UZU_ENGINE_VERSION`** to override). **`just download-uzu`** runs **`scripts/download-uzu-registry-model.tish`**; set **`TISH`** if the `tish` binary is not on your `PATH`.
-
-## Commands
-
-| Command | Purpose |
-|---------|---------|
-| `just download-uzu` | Fetch pre-built Uzu bundle into `models/…` |
-| `just uzu` | Stream generation (default: `models/<model_folder>/`) |
-| `just benchmark` | Run Uzu on the benchmark prompt → `benchmarks/report-*.md` |
+| Recipe | Purpose |
+|--------|---------|
+| `just --list` | List recipes |
 | `just build` | `cargo build --release` |
-| `just` | Lists recipes (default target) |
+| `just benchmark` | Longer run + `benchmarks/report-*.md` |
+| `just tish-llm` / `just tish-count-tokens` | Optional Tish demos: same defaults as `just run` when given no args; else args go to the binary |
 
-Override the default model directory with **`UZU_MODEL_PATH`** (absolute or repo-relative), or pass a path as the first argument to **`just uzu`**.
+`download-uzu` and `uzu` still work as aliases for `download` and `run`.
 
-## Examples
-
-```bash
-just download-uzu
-just uzu "Tell me about London" 128
-just uzu ./models/Llama-3.2-1B-Instruct-8bit "Hello" 64
-```
+**Cargo (without `just`)**
 
 ```bash
-cargo run --example llm_uzu --release -- --stream \
-  ./models/Llama-3.2-1B-Instruct-8bit "Tell me about London" 128
+cargo run --example llm_uzu --release -- --stream ./models/Llama-3.2-1B-Instruct-8bit "Tell me about London" 128
 ```
 
-More models: [Mirai Uzu README — Models](https://github.com/trymirai/uzu#models) (`list-models` / registry IDs).
+More models: [Mirai Uzu — Models](https://github.com/trymirai/uzu#models).
 
 ## License
 
-MIT OR Apache-2.0 (see repository).
+PIF

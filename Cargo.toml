@@ -6,12 +6,17 @@ description = "Apple Silicon LLM inference with Mirai Uzu (pre-built registry bu
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+tishlang_core = { path = "../tish/crates/tish_core" }
 uzu = { git = "https://github.com/trymirai/uzu", branch = "main", package = "uzu", optional = true }
 tokenizers = { version = "0.22", features = ["onig"], optional = true }
 
 [features]
 default = ["uzu"]
 uzu = ["dep:uzu", "dep:tokenizers"]
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
 
 [[example]]
 name = "llm_uzu"

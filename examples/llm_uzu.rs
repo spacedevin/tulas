@@ -5,35 +5,19 @@
 //!
 //! For benchmarks, set `BENCH_TOKENIZER` to a `tokenizer.json` path to emit
 //! `[bench] generated N tokens in …` for benchmark scripts.
+//!
+//! Model load happens **before** the timer so `[bench] tok/s` reflects generation only.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use tokenizers::Tokenizer;
+use tish_mlx_burn::count_completion_tokens;
 use uzu::session::{
     config::{DecodingConfig, RunConfig},
     types::{Input, Output},
     Session,
 };
-
-fn count_completion_tokens(
-    tokenizer_path: &Path,
-    prompt: &str,
-    full_text: &str,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    let tokenizer = Tokenizer::from_file(tokenizer_path)
-        .map_err(|e| format!("Tokenizer: {}", e))?;
-    let completion = if full_text.starts_with(prompt) {
-        &full_text[prompt.len()..]
-    } else {
-        full_text
-    };
-    let encoding = tokenizer
-        .encode(completion, false)
-        .map_err(|e| format!("Encode: {}", e))?;
-    Ok(encoding.get_ids().len())
-}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args: Vec<String> = std::env::args().collect();
@@ -55,13 +39,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         2 => (
             PathBuf::from(&args[1]),
             "Tell me about London.".to_string(),
-            128,
+            128u64,
         ),
-        3 => (PathBuf::from(&args[1]), args[2].clone(), 128),
+        3 => (PathBuf::from(&args[1]), args[2].clone(), 128u64),
         _ => (
             PathBuf::from(&args[1]),
             args[2].clone(),
-            args[3].parse().unwrap_or(128),
+            args[3].parse::<u64>().unwrap_or(128),
         ),
     };
 
@@ -69,19 +53,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err(format!("Model path does not exist: {}", model_path.display()).into());
     }
 
+    let bench_tokenizer = std::env::var("BENCH_TOKENIZER")
+        .ok()
+        .filter(|s| !s.is_empty());
+    let prompt_for_bench = bench_tokenizer
+        .as_ref()
+        .map(|_| prompt.clone());
+
     println!("Loading model from {}...", model_path.display());
     let mut session = Session::new(model_path, DecodingConfig::default())?;
-
     println!("Prompt: {}", prompt);
     println!("Generating (max {} tokens)...\n", tokens_limit);
 
-    let prompt_str = prompt.clone();
     let start = std::time::Instant::now();
-    let input = Input::Text(prompt);
 
-    let output = if stream {
+    let full_text = if stream {
         let last_len = AtomicUsize::new(0);
-        session.run(
+        let input = Input::Text(prompt);
+        let out = session.run(
             input,
             RunConfig::default().tokens_limit(tokens_limit),
             Some(move |output: Output| {
@@ -94,25 +83,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 true
             }),
-        )?
+        )?;
+        out.text.original
     } else {
-        session.run(
+        let input = Input::Text(prompt);
+        let out = session.run(
             input,
             RunConfig::default().tokens_limit(tokens_limit),
             Some(|_: Output| true),
-        )?
+        )?;
+        out.text.original
     };
 
     let elapsed = start.elapsed();
     if !stream {
-        println!("{}", output.text.original);
+        println!("{}", full_text);
     } else {
         println!();
     }
 
-    match std::env::var("BENCH_TOKENIZER") {
-        Ok(path) if !path.is_empty() => {
-            match count_completion_tokens(Path::new(&path), &prompt_str, &output.text.original) {
+    match (&bench_tokenizer, &prompt_for_bench) {
+        (Some(path), Some(prompt_ref)) => {
+            match count_completion_tokens(Path::new(path), prompt_ref, &full_text) {
                 Ok(n) => {
                     let tok_per_sec = n as f64 / elapsed.as_secs_f64().max(f64::EPSILON);
                     eprintln!(

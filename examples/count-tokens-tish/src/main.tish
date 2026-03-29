@@ -1,0 +1,17 @@
+// argv: [exe, tokenizer.json, text] — same as Node-style argv after the executable.
+
+import { countTokens } from "tish:mlx-burn"
+import { argv, exit } from "tish:process"
+
+if (argv.length < 3) {
+  console.log("Usage: count-tokens-tish <tokenizer.json> <text>")
+  exit(1)
+}
+
+let tokPath = argv[1]
+let text = argv[2]
+let n = countTokens(tokPath, text)
+if (n === null) {
+  exit(1)
+}
+console.log(n)
