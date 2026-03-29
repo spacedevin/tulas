@@ -1,0 +1,152 @@
+// Mirai registry → local Uzu bundle (same behavior as the old Python helper).
+// Requires: tish built with --features fs,process
+//   cargo build -p tishlang --release --features fs,process
+// Env (set by just download-uzu): UZU_REGISTRY_REPO_ID, UZU_MODEL_DEST
+// Optional: UZU_ENGINE_VERSION (else read from Cargo.lock)
+
+import { readFile, mkdir, fileExists } from 'tish:fs'
+import { exec, process } from 'tish:process'
+
+fn parentDir(p) {
+  let parts = p.split("/")
+  if (parts.length <= 1) {
+    return "."
+  }
+  parts.pop()
+  let out = parts.join("/")
+  return out.length > 0 ? out : "/"
+}
+
+fn shQuote(s) {
+  return "'" + s.split("'").join("'\"'\"'") + "'"
+}
+
+fn linePackageName(line) {
+  let t = line.trim()
+  let p = "name = \""
+  if (!t.startsWith(p)) {
+    return null
+  }
+  let rest = t.slice(p.length)
+  let q = rest.indexOf("\"")
+  if (q < 0) {
+    return null
+  }
+  return rest.slice(0, q)
+}
+
+fn lineVersionValue(line) {
+  let t = line.trim()
+  let p = "version = \""
+  if (!t.startsWith(p)) {
+    return null
+  }
+  let rest = t.slice(p.length)
+  let q = rest.indexOf("\"")
+  if (q < 0) {
+    return null
+  }
+  return rest.slice(0, q)
+}
+
+fn uzuVersionFromLock(text) {
+  let lines = text.split("\n")
+  let i = 0
+  while (i < lines.length) {
+    if (linePackageName(lines[i]) === "uzu") {
+      let j = i + 1
+      while (j < lines.length && j < i + 15) {
+        let v = lineVersionValue(lines[j])
+        if (v !== null) {
+          return v
+        }
+        j = j + 1
+      }
+    }
+    i = i + 1
+  }
+  console.log("error: could not find uzu version in Cargo.lock")
+  process.exit(1)
+  return ""
+}
+
+fn findModel(models, repoId) {
+  for (let m of models) {
+    if (m.repoId === repoId) {
+      return m
+    }
+  }
+  return null
+}
+
+fn downloadUrl(url, destPath) {
+  mkdir(parentDir(destPath), true)
+  let cmd = "curl -fsSL " + shQuote(url) + " -o " + shQuote(destPath)
+  let code = exec(cmd)
+  if (code !== 0) {
+    console.log("curl failed:", code, url)
+    process.exit(1)
+  }
+}
+
+let repoId = "UZU_REGISTRY_REPO_ID" in process.env && process.env.UZU_REGISTRY_REPO_ID.length > 0
+  ? process.env.UZU_REGISTRY_REPO_ID
+  : "mlx-community/Llama-3.2-1B-Instruct-8bit"
+
+let dest = ""
+if ("UZU_MODEL_DEST" in process.env && process.env.UZU_MODEL_DEST.length > 0) {
+  dest = process.env.UZU_MODEL_DEST
+} else {
+  dest = process.cwd() + "/models/Llama-3.2-1B-Instruct-8bit"
+}
+
+let version = "UZU_ENGINE_VERSION" in process.env && process.env.UZU_ENGINE_VERSION.length > 0
+  ? process.env.UZU_ENGINE_VERSION
+  : uzuVersionFromLock(readFile("Cargo.lock"))
+
+let api =
+  "https://sdk.trymirai.com/api/v1/models/list/uzu/" +
+  version +
+  "?includeTraces=true&type=language_model"
+
+let registryCache = dest + "/.uzu-registry-list.json"
+
+console.log("Mirai Uzu registry version=" + version + " model=" + repoId + " -> " + dest + "/")
+
+mkdir(dest, true)
+downloadUrl(api, registryCache)
+
+let registry = JSON.parse(readFile(registryCache))
+let model = findModel(registry.models, repoId)
+if (model === null) {
+  console.log("Model not found in registry:", repoId)
+  process.exit(1)
+}
+
+let files = model.files ?? []
+for (let f of files) {
+  let fp = dest + "/" + f.name
+  if (fileExists(fp)) {
+    console.log("  skip:", f.name)
+  } else {
+    console.log("  fetch:", f.name)
+    downloadUrl(f.url, fp)
+  }
+}
+
+let specs = model.speculators ?? []
+for (let spec of specs) {
+  let uc = "useCase" in spec && spec.useCase !== null ? spec.useCase : "default"
+  let specFiles = spec.files ?? []
+  for (let f of specFiles) {
+    let fp = dest + "/speculators/" + uc + "/" + f.name
+    if (fileExists(fp)) {
+      console.log("  skip: speculators/" + uc + "/" + f.name)
+    } else {
+      console.log("  fetch: speculators/" + uc + "/" + f.name)
+      downloadUrl(f.url, fp)
+    }
+  }
+}
+
+console.log("Done.")

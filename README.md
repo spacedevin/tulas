@@ -5,7 +5,14 @@
 ## Requirements
 
 - Rust **1.93+** (see `rustup update`)
-- Python **3** for `scripts/download-uzu-registry-model.py`
+- **Tish** CLI with **`fs`** and **`process`** (registry + weights are fetched with `curl`). Example build from a Tish workspace checkout:
+
+  ```bash
+  cargo build -p tishlang --release --features fs,process
+  export PATH="/path/to/tish/target/release:$PATH"   # or set TISH to the full path to `tish`
+  ```
+
+- **`curl`** on `PATH` (used by the download script)
 
 ## Model
 
@@ -15,19 +22,19 @@ Weights are **not** plain `huggingface-cli download` MLX trees (wrong `config.js
 just download-uzu
 ```
 
-Defaults live in the `justfile` (`registry_repo`, `model_folder`). Override download with **`UZU_REGISTRY_REPO_ID`**. The script reads **`uzu`’s version from `Cargo.lock`** for the API (set **`UZU_ENGINE_VERSION`** to override).
+Defaults live in the `justfile` (`registry_repo`, `model_folder`). Override download with **`UZU_REGISTRY_REPO_ID`**. The script reads **`uzu`’s version from `Cargo.lock`** for the API (set **`UZU_ENGINE_VERSION`** to override). **`just download-uzu`** runs **`scripts/download-uzu-registry-model.tish`**; set **`TISH`** if the `tish` binary is not on your `PATH`.
 
 ## Commands
 
 | Command | Purpose |
 |---------|---------|
 | `just download-uzu` | Fetch pre-built Uzu bundle into `models/…` |
-| `just uzu` | Stream generation (default model path from resolver) |
+| `just uzu` | Stream generation (default: `models/<model_folder>/`) |
 | `just benchmark` | Run Uzu on the benchmark prompt → `benchmarks/report-*.md` |
 | `just build` | `cargo build --release` |
 | `just` | Lists recipes (default target) |
 
-Paths: **`UZU_MODEL_PATH`**, or **`UZU_MODEL_DIR`** + **`UZU_MODEL_BUNDLE`**, else `scripts/resolve-uzu-model-path.sh` (see script header).
+Override the default model directory with **`UZU_MODEL_PATH`** (absolute or repo-relative), or pass a path as the first argument to **`just uzu`**.
 
 ## Examples
 

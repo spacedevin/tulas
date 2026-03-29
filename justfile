@@ -16,11 +16,14 @@ benchmark_tokens := "256"
 download-uzu:
     #!/usr/bin/env bash
     set -euo pipefail
-    cd "{{ justfile_directory() }}"
+    cd "{{justfile_directory()}}"
     mkdir -p "{{models_dir}}"
     DEST="{{models_dir}}/{{model_folder}}"
     REPO="${UZU_REGISTRY_REPO_ID:-{{registry_repo}}}"
-    python3 scripts/download-uzu-registry-model.py "$REPO" "$DEST"
+    TISH_BIN="${TISH:-tish}"
+    export UZU_REGISTRY_REPO_ID="$REPO"
+    export UZU_MODEL_DEST="$PWD/$DEST"
+    "$TISH_BIN" run scripts/download-uzu-registry-model.tish --backend vm
     echo "Model directory: $DEST"
 
 build:
@@ -29,12 +32,17 @@ build:
 uzu *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
-    cd "{{ justfile_directory() }}"
+    cd "{{justfile_directory()}}"
     if [[ -n "${1:-}" && -d "$1" ]]; then
         MODEL=$1; shift
         P="${1:-{{prompt}}}"; T="${2:-{{tokens}}}"
     else
-        MODEL="$(bash scripts/resolve-uzu-model-path.sh)"
+        if [[ -n "${UZU_MODEL_PATH:-}" ]]; then
+            MODEL="$UZU_MODEL_PATH"
+            [[ "$MODEL" == /* ]] || MODEL="$PWD/$MODEL"
+        else
+            MODEL="$PWD/{{models_dir}}/{{model_folder}}"
+        fi
         P="${1:-{{prompt}}}"; T="${2:-{{tokens}}}"
     fi
     [[ -d "$MODEL" ]] || { echo "No bundle at $MODEL — run just download-uzu"; exit 1; }
@@ -43,13 +51,18 @@ uzu *ARGS:
 benchmark:
     #!/usr/bin/env bash
     set -euo pipefail
-    cd "{{ justfile_directory() }}"
+    cd "{{justfile_directory()}}"
     mkdir -p "{{benchmarks_dir}}"
     REPORT="{{benchmarks_dir}}/report-$(date +%Y%m%d-%H%M%S).md"
     TMP=$(mktemp -d)
     trap 'rm -rf "$TMP"' EXIT
 
-    MODEL="$(bash scripts/resolve-uzu-model-path.sh)"
+    if [[ -n "${UZU_MODEL_PATH:-}" ]]; then
+        MODEL="$UZU_MODEL_PATH"
+        [[ "$MODEL" == /* ]] || MODEL="$PWD/$MODEL"
+    else
+        MODEL="$PWD/{{models_dir}}/{{model_folder}}"
+    fi
     TOK="$MODEL/tokenizer.json"
     [[ -f "$TOK" ]] || { echo "Missing $TOK — run just download-uzu"; exit 1; }
 
