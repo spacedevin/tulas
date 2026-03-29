@@ -4,3 +4,4 @@ models/
 burn-lm/
 benchmarks/
 lalamo
+.DS_Store
