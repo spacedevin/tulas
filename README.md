@@ -1,4 +1,6 @@
-# TULAS — Uzu on Apple Silicon
+# TULAS — Tish and Uzu with LLama on Apple Silicon
+
+> 🚧 Experimental
 
 **Run a model**
 
@@ -43,7 +45,3 @@ cargo run --example llm_uzu --release -- --stream ./models/Llama-3.2-1B-Instruct
 ```
 
 More models: [Mirai Uzu — Models](https://github.com/trymirai/uzu#models).
-
-## License
-
-PIF

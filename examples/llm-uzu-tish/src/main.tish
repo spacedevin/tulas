@@ -1,47 +1,11 @@
-// Native binary argv: [exe, ...args] — first user arg is argv[1].
-// Defaults match the repo justfile: same prompt/tokens as `just run`.
+import { generateStream } from "tish:tulas"
 
-import { generate, generateStream } from "tish:mlx-burn"
-import { argv, exit } from "tish:process"
-
-let i = 1
-let stream = false
-if (argv.length > i && argv[i] === "--stream") {
-  stream = true
-  i = i + 1
-}
-
-if (argv.length <= i) {
-  console.log("Usage: llm-uzu-tish [--stream] <MODEL_DIR> [PROMPT] [MAX_TOKENS]")
-  exit(1)
-}
-
-let modelPath = argv[i]
-i = i + 1
+let modelPath = "./models/Llama-3.2-1B-Instruct-8bit"
 let prompt = "Tell me about London in three sentences."
 let limit = 64.0
-if (argv.length > i) {
-  prompt = argv[i]
-  i = i + 1
-}
-if (argv.length > i) {
-  limit = parseFloat(argv[i])
-}
 
-console.log("Model:", modelPath)
-console.log("Prompt:", prompt)
-console.log("Max tokens:", limit)
-
-if (stream) {
-  let acc = ""
-  generateStream(modelPath, prompt, limit, (chunk) => {
-    acc = acc + chunk
-  })
-  console.log(acc)
-} else {
-  let text = generate(modelPath, prompt, limit)
-  if (text === null) {
-    exit(1)
-  }
-  console.log(text)
-}
+let acc = ""
+generateStream(modelPath, prompt, limit, (chunk) => {
+  acc = acc + chunk
+})
+console.log(acc)

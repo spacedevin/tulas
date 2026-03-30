@@ -1,8 +1,8 @@
 {
-  "name": "tish-mlx-burn",
+  "name": "tish-tulas",
   "private": true,
   "tish": {
     "module": true,
-    "export": "mlx_burn_object"
+    "export": "tulas_object"
   }
 }

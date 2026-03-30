@@ -1,9 +1,9 @@
 [package]
-name = "tish-mlx-burn"
+name = "tish-tulas"
 version = "0.1.0"
 edition = "2021"
-description = "Apple Silicon LLM inference with Mirai Uzu (pre-built registry bundles)"
-license = "MIT OR Apache-2.0"
+description = "Tish and Uzu with LLama on Apple Silicon"
+license = "PIF"
 
 [dependencies]
 tishlang_core = { path = "../tish/crates/tish_core" }
@@ -18,12 +18,3 @@ uzu = ["dep:uzu", "dep:tokenizers"]
 codegen-units = 1
 lto = "thin"
 
-[[example]]
-name = "llm_uzu"
-path = "examples/llm_uzu.rs"
-required-features = ["uzu"]
-
-[[example]]
-name = "count_tokens"
-path = "examples/count_tokens.rs"
-required-features = ["uzu"]

@@ -1,0 +1,9 @@
+import { generateBench } from "tish:tulas"
+
+let modelPath = "./models/Llama-3.2-1B-Instruct-8bit"
+let prompt = "Recite the poem 'The Road Not Taken' by Robert Frost in full."
+let limit = 256.0
+
+let result = generateBench(modelPath, prompt, limit)
+console.log("[bench] elapsed_ms=" + result.elapsed_ms + " tokens=" + result.tokens)
+console.log(result.text)

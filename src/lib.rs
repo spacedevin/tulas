@@ -1,5 +1,5 @@
-//! Tish native module (`tish:mlx-burn`) and shared helpers for Uzu + tokenizers.
-//! Rust binaries and `mlx_burn_object()` are gated behind the `uzu` feature (enabled by default).
+//! Tish native module (`tish:tulas`) and shared helpers for Uzu + tokenizers.
+//! `tulas_object()` is gated behind the `uzu` feature (enabled by default).
 
 #[cfg(feature = "uzu")]
 use tishlang_core::NativeFn;
@@ -9,12 +9,13 @@ use tishlang_core::{tish_module, Value};
 mod uzu_api;
 #[cfg(feature = "uzu")]
 pub use uzu_api::{
-    count_completion_tokens, count_tokens, generate, generate_stream, generate_stream_to_writer,
+    count_completion_tokens, count_tokens, generate, generate_bench, generate_stream,
+    generate_stream_to_writer,
 };
 
-/// Namespace object for `import { … } from "tish:mlx-burn"`.
+/// Namespace object for `import { … } from "tish:tulas"`.
 #[cfg(feature = "uzu")]
-pub fn mlx_burn_object() -> Value {
+pub fn tulas_object() -> Value {
     use std::path::Path;
 
     tish_module! {
@@ -81,6 +82,32 @@ pub fn mlx_burn_object() -> Value {
                 }
             }
         },
+        "generateBench" => |args: &[Value]| {
+            let Some(model_v) = args.first() else {
+                eprintln!("generateBench: expected (modelPath, prompt, tokensLimit)");
+                return Value::Null;
+            };
+            let Some(prompt_v) = args.get(1) else {
+                eprintln!("generateBench: expected (modelPath, prompt, tokensLimit)");
+                return Value::Null;
+            };
+            let limit = parse_tokens_limit(args.get(2));
+            let model_path = model_v.to_display_string();
+            let prompt = prompt_v.to_display_string();
+            match generate_bench(Path::new(&model_path), &prompt, limit) {
+                Ok((text, elapsed_ms, tokens)) => {
+                    let mut map = ObjectMap::default();
+                    map.insert(std::sync::Arc::from("text"), Value::String(std::sync::Arc::from(text)));
+                    map.insert(std::sync::Arc::from("elapsed_ms"), Value::Number(elapsed_ms as f64));
+                    map.insert(std::sync::Arc::from("tokens"), Value::Number(tokens as f64));
+                    Value::object(map)
+                }
+                Err(e) => {
+                    eprintln!("generateBench: {e}");
+                    Value::Null
+                }
+            }
+        },
         "generateStream" => |args: &[Value]| {
             let Some(model_v) = args.first() else {
                 eprintln!("generateStream: expected (modelPath, prompt, tokensLimit, onChunk)");
@@ -121,22 +148,26 @@ pub fn mlx_burn_object() -> Value {
 }
 
 #[cfg(not(feature = "uzu"))]
-pub fn mlx_burn_object() -> Value {
+pub fn tulas_object() -> Value {
     tish_module! {
         "countTokens" => |_args: &[Value]| {
-            eprintln!("countTokens: tish-mlx-burn was built without the \"uzu\" feature");
+            eprintln!("countTokens: tish-tulas was built without the \"uzu\" feature");
             Value::Null
         },
         "benchCompletionTokens" => |_args: &[Value]| {
-            eprintln!("benchCompletionTokens: tish-mlx-burn was built without the \"uzu\" feature");
+            eprintln!("benchCompletionTokens: tish-tulas was built without the \"uzu\" feature");
             Value::Null
         },
         "generate" => |_args: &[Value]| {
-            eprintln!("generate: tish-mlx-burn was built without the \"uzu\" feature");
+            eprintln!("generate: tish-tulas was built without the \"uzu\" feature");
+            Value::Null
+        },
+        "generateBench" => |_args: &[Value]| {
+            eprintln!("generateBench: tish-tulas was built without the \"uzu\" feature");
             Value::Null
         },
         "generateStream" => |_args: &[Value]| {
-            eprintln!("generateStream: tish-mlx-burn was built without the \"uzu\" feature");
+            eprintln!("generateStream: tish-tulas was built without the \"uzu\" feature");
             Value::Null
         },
     }

@@ -58,6 +58,43 @@ pub fn generate(model_path: &Path, prompt: &str, tokens_limit: u64) -> Result<St
     Ok(out.text.original)
 }
 
+/// Load model first (untimed), then time only `session.run()`.
+/// Returns `(text, elapsed_ms, completion_token_count)`.
+pub fn generate_bench(
+    model_path: &Path,
+    prompt: &str,
+    tokens_limit: u64,
+) -> Result<(String, u64, usize), String> {
+    let tok_path = model_path.join("tokenizer.json");
+    let tokenizer =
+        Tokenizer::from_file(&tok_path).map_err(|e| format!("Tokenizer: {e}"))?;
+
+    // Model load is NOT timed — matches original llm_uzu.rs behaviour.
+    let mut session =
+        Session::new(model_path.to_path_buf(), DecodingConfig::default()).map_err(uzu_err)?;
+
+    let start = std::time::Instant::now();
+    let input = Input::Text(prompt.to_string());
+    let out = session
+        .run(
+            input,
+            RunConfig::default().tokens_limit(tokens_limit),
+            Some(|_: Output| true),
+        )
+        .map_err(uzu_err)?;
+    let elapsed_ms = start.elapsed().as_millis() as u64;
+
+    let text = out.text.original;
+    let completion = if text.starts_with(prompt) { &text[prompt.len()..] } else { &text };
+    let n = tokenizer
+        .encode(completion, false)
+        .map_err(|e| format!("Encode: {e}"))?
+        .get_ids()
+        .len();
+
+    Ok((text, elapsed_ms, n))
+}
+
 /// Hot path for CLI / benchmarks: one `RefCell` borrow per chunk (matches pre–crate-split `llm_uzu`).
 pub fn generate_stream_to_writer<W: Write + 'static>(
     model_path: &Path,
