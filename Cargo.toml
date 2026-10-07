@@ -3,7 +3,7 @@ name = "tish-tulas"
 version = "0.1.0"
 edition = "2021"
 description = "Tish and Uzu with LLama on Apple Silicon"
-license = "PIF"
+license = "MIT"
 
 [dependencies]
 tishlang_core = { path = "../tish/crates/tish_core" }
